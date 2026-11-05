@@ -15,6 +15,9 @@
 #include "load.h"
 #include "fastrand.h"
 #include "checksum.h"
+#ifdef __amigaos__
+#include "amiga_port.h"
+#endif
 
 /* External functions used in this file */
 extern int DoInitializations(Uint32 video_flags);		/* init.cc */
@@ -170,7 +173,12 @@ int main(int argc, char *argv[])
 	/* Command line flags */
 	int doprinthigh = 0;
 	int speedtest = 0;
+#ifdef __amigaos__
+	/* A window on the Workbench unless -fullscreen is given */
+	Uint32 video_flags = 0;
+#else
 	Uint32 video_flags = SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
 
 	/* Normal variables */
 	SDL_Event event;
@@ -196,6 +204,11 @@ int main(int argc, char *argv[])
 		if ( strcmp(argv[1], "-windowed") == 0 ) {
 			video_flags &= ~SDL_WINDOW_FULLSCREEN_DESKTOP;
 		} else
+#ifdef __amigaos__
+		if ( strcmp(argv[1], "-fullscreen") == 0 ) {
+			video_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+		} else
+#endif
 		if ( strcmp(argv[1], "-gamma") == 0 ) {
 			int gammacorrect;
 
@@ -277,6 +290,9 @@ int main(int argc, char *argv[])
 		/* An error message was already printed */
 		exit(1);
 	}
+#ifdef __amigaos__
+	amiga_install_quit_key();
+#endif
 
 	if ( speedtest ) {
 		RunSpeedTest();
@@ -293,12 +309,23 @@ int main(int argc, char *argv[])
 
 	while ( gRunning ) {
 		
+#ifdef __amigaos__
+		/* Right Amiga+Q in a game ended it; now leave */
+		if ( amiga_quit_requested ) {
+			break;
+		}
+#endif
 		/* Update the screen if necessary */
 		if ( gUpdateBuffer )
 			DrawMainScreen();
 
 		/* -- Get an event */
 		screen->WaitEvent(&event);
+#ifdef __amigaos__
+		if ( amiga_quit_requested ) {
+			break;
+		}
+#endif
 
 		/* -- Handle it! */
 		if ( event.type == SDL_KEYDOWN ) {
@@ -340,6 +367,9 @@ int main(int argc, char *argv[])
 
 				/* -- Let them leave */
 				case SDLK_q:
+#ifdef __amigaos__
+				case SDLK_ESCAPE:
+#endif
 					RunQuitGame();
 					break;
 
