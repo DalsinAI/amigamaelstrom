@@ -1,0 +1,20 @@
+Maelstrom 3.0.7 for AmigaOS 3.x: licences
+=========================================
+
+The game: Maelstrom by Andrew Welch (Ambrosia Software, Inc.), 1992-1995;
+the GPL port to SDL by Sam Lantinga, https://github.com/libsdl-org/Maelstrom
+(the Maelstrom-3 branch, 3.0.7).
+
+- The program is under the GNU General Public License, version 2 or (at
+  your option) any later version (COPYING.GPL), as upstream's COPYING.txt
+  says.
+- The artwork, animations and sounds (Maelstrom_Fonts, Maelstrom_Sounds,
+  Maelstrom_Sprites, Images/, and icon.bmp used for the Workbench icons)
+  may be used under the Creative Commons Attribution 3.0 licence
+  (unported), http://creativecommons.org/licenses/by/3.0/legalcode, as
+  COPYING.txt says. They are shipped unchanged.
+- As COPYING.txt asks, the drawer holds Ambrosia_Software,_Inc._FAQ.txt
+  and MaelstromGPL_press_release.txt (from upstream's Docs).
+- The Amiga port's own files (amiga/) are GPL 2 or later, like the program.
+  Copyright (c) 2026 AmiCradle Team.
+- SDL2_net (zlib licence) is linked in, from the GFOpenGPU kit.
