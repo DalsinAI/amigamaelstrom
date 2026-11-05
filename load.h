@@ -21,10 +21,14 @@ static inline char *strdup(const char *str)
 	return(newstr);
 }
 #endif
-#if defined(unix) || defined(__MACH__) || defined(__BEOS__)
+#if defined(unix) || defined(__MACH__) || defined(__BEOS__) || defined(__amigaos__)
 #include <unistd.h>
 #endif
 #endif /* WIN32 */
+
+#ifdef __amigaos__
+#include <sys/stat.h>
+#endif
 
 #include "SDL_FrameBuf.h"
 
@@ -41,6 +45,9 @@ static inline char *strdup(const char *str)
 #elif defined(macintosh)
 #define DIR_SEP	":"
 #define CUR_DIR	":"
+#elif defined(__amigaos__)
+#define DIR_SEP	"/"
+#define CUR_DIR	"PROGDIR:"
 #else
 #error Unspecified platform!
 #endif /* Choose your platform */
@@ -118,6 +125,11 @@ public:
 		path = new char[pathlen];
 		if (SDL_strcmp(directory, DIR_SEP) == 0) {
 			SDL_snprintf(path, pathlen, DIR_SEP "%s", filename);
+#ifdef __amigaos__
+		} else if (directory[0] && directory[strlen(directory)-1] == ':') {
+			/* "PROGDIR:/x" would be the parent drawer's x */
+			SDL_snprintf(path, pathlen, "%s%s", directory, filename);
+#endif
 		} else {
 			SDL_snprintf(path, pathlen, "%s" DIR_SEP "%s", directory, filename);
 		}
@@ -147,7 +159,13 @@ public:
 	}
 
 	const char *Path(const char *filename) {
+#ifdef __amigaos__
+		/* The settings and the high scores in the drawer's User drawer */
+		char *directory = SDL_strdup("PROGDIR:User");
+		mkdir(directory, 0755);
+#else
 		char *directory = SDL_GetPrefPath("Ambrosia Software", "Maelstrom");
+#endif
 		if (!directory) {
 			directory = SDL_strdup(CUR_DIR);
 		}
