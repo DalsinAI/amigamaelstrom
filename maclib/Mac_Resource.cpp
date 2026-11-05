@@ -187,9 +187,23 @@ static FILE *Open_MacRes(char **original, Uint32 *resbase)
 	size_t len = strlen(*original)+1;
 	filename = new char[len];
 	SDL_strlcpy(filename, *original, len);
+	const char *sep = "/";
+	char *dircopy = NULL;
 	if ( (basename=strrchr(filename, '/')) != NULL ) {
 		dirname = filename;
 		*(basename++) = '\0';
+#ifdef __amigaos__
+	} else if ( (ptr=strrchr(filename, ':')) != NULL ) {
+		/* "PROGDIR:Maelstrom Sounds": the directory keeps its colon
+		   and takes no '/' ("%PROGDIR:..." would ask for a volume) */
+		size_t dirlen = (ptr-filename)+1;
+		dircopy = new char[dirlen+1];
+		memcpy(dircopy, filename, dirlen);
+		dircopy[dirlen] = '\0';
+		dirname = dircopy;
+		basename = ptr+1;
+		sep = "";
+#endif
 	} else {
 		dirname = "";
 		basename = filename;
@@ -206,7 +220,7 @@ static FILE *Open_MacRes(char **original, Uint32 *resbase)
 		/* First look for Executor (tm) resource forks */
 		size_t len = strlen(dirname)+2+1+strlen(basename)+1;
 		newname = new char[len];
-		SDL_snprintf(newname, len, "%s%s%%%s", dirname, (*dirname ? "/" : ""),
+		SDL_snprintf(newname, len, "%s%s%%%s", dirname, (*dirname ? sep : ""),
 								basename);
 		if ( (resfile=fopen(newname, "rb")) != NULL ) {
 			break;
@@ -216,7 +230,7 @@ static FILE *Open_MacRes(char **original, Uint32 *resbase)
 		/* Look for MacBinary files */
 		len = strlen(dirname)+2+strlen(basename)+4+1;
 		newname = new char[len];
-		SDL_snprintf(newname, len, "%s%s%s.bin", dirname, (*dirname ? "/" : ""),
+		SDL_snprintf(newname, len, "%s%s%s.bin", dirname, (*dirname ? sep : ""),
 								basename);
 		if ( (resfile=fopen(newname, "rb")) != NULL ) {
 			break;
@@ -226,7 +240,7 @@ static FILE *Open_MacRes(char **original, Uint32 *resbase)
 		/* Look for raw resource fork.. */
 		len = strlen(dirname)+2+strlen(basename)+1;
 		newname = new char[len];
-		SDL_snprintf(newname, len, "%s%s%s", dirname, (*dirname ? "/" : ""),
+		SDL_snprintf(newname, len, "%s%s%s", dirname, (*dirname ? sep : ""),
 								basename);
 		if ( (resfile=fopen(newname, "rb")) != NULL ) {
 			break;
@@ -255,6 +269,7 @@ static FILE *Open_MacRes(char **original, Uint32 *resbase)
 #ifdef APPLEDOUBLE_DEBUG
 mesg("Resfile base = %d\n", *resbase);
 #endif
+	delete[] dircopy;
 	delete[] filename;
 	return(resfile);
 }

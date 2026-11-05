@@ -41,6 +41,13 @@ static inline char *strdup(const char *str)
 #elif defined(macintosh)
 #define DIR_SEP	":"
 #define CUR_DIR	":"
+#elif defined(__amigaos__)
+/* AmigaOS: the data, the scores and the settings are in the program's
+   own drawer. "PROGDIR:" + "/" would be the parent drawer, so a directory
+   ending in ':' gets no separator (see JoinPath() below). */
+#define DIR_SEP	"/"
+#define CUR_DIR	"PROGDIR:"
+#define LIBDIR	"PROGDIR:"
 #else
 #error Unspecified platform!
 #endif /* Choose your platform */
@@ -52,6 +59,23 @@ static inline char *strdup(const char *str)
 #define LIBDIR	CUR_DIR
 #endif
 #endif /* !defined(LIBDIR) */
+
+/* "dir" DIR_SEP "file", except after a device or assign name ("PROGDIR:") */
+static inline char *JoinPath(const char *directory, const char *filename)
+{
+	size_t dirlen = strlen(directory);
+	size_t pathlen = dirlen+1+strlen(filename)+1;
+	char *path = new char[pathlen];
+
+	if ( (dirlen > 0) && (directory[dirlen-1] == ':') ) {
+		SDL_snprintf(path, pathlen, "%s%s", directory, filename);
+	} else if (SDL_strcmp(directory, DIR_SEP) == 0) {
+		SDL_snprintf(path, pathlen, DIR_SEP "%s", filename);
+	} else {
+		SDL_snprintf(path, pathlen, "%s" DIR_SEP "%s", directory, filename);
+	}
+	return(path);
+}
 
 class LibPath {
 
@@ -71,7 +95,8 @@ public:
 		if ( exep > exepath ) {
 			*exep = '\0';
 		} else {
-			SDL_strlcpy(exepath, CUR_DIR, sizeof(exepath));
+			SDL_free(exepath);
+			exepath = SDL_strdup(CUR_DIR);
 		}
 	}
 
@@ -89,12 +114,11 @@ public:
 
 	const char *Path(const char *filename) {
 		const char *directory;
-		size_t pathlen;
 
 		directory = SDL_getenv("MAELSTROM_LIB");
 		if ( directory == NULL ) {
 			directory = LIBDIR;
-#ifndef macintosh
+#if !defined(macintosh) && !defined(__amigaos__)
 			if ( access(directory, F_OK) < 0 ) {
 				directory = exepath;
 			}
@@ -105,7 +129,7 @@ public:
 			delete[] path;
 
 #ifdef __MACOSX__
-		pathlen = strlen(directory)+strlen("/../Resources/")+strlen(filename)+1;
+		size_t pathlen = strlen(directory)+strlen("/../Resources/")+strlen(filename)+1;
 		path = new char[pathlen];
 		SDL_snprintf(path, pathlen, "%s/../Resources/%s", directory, filename);
 		if ( access(path, F_OK) == 0 ) {
@@ -114,13 +138,7 @@ public:
 		delete[] path;
 #endif
 
-		pathlen = strlen(directory)+1+strlen(filename)+1;
-		path = new char[pathlen];
-		if (SDL_strcmp(directory, DIR_SEP) == 0) {
-			SDL_snprintf(path, pathlen, DIR_SEP "%s", filename);
-		} else {
-			SDL_snprintf(path, pathlen, "%s" DIR_SEP "%s", directory, filename);
-		}
+		path = JoinPath(directory, filename);
 		return(path);
 	}
 	const char *Path(void) {
@@ -147,7 +165,11 @@ public:
 	}
 
 	const char *Path(const char *filename) {
+#ifdef __amigaos__
+		char *directory = SDL_strdup(CUR_DIR);
+#else
 		char *directory = SDL_GetPrefPath("Ambrosia Software", "Maelstrom");
+#endif
 		if (!directory) {
 			directory = SDL_strdup(CUR_DIR);
 		}
@@ -155,9 +177,7 @@ public:
 		if ( path != NULL )
 			delete[] path;
 
-		size_t pathlen = strlen(directory)+1+strlen(filename)+1;
-		path = new char[pathlen];
-		SDL_snprintf(path, pathlen, "%s" DIR_SEP "%s", directory, filename);
+		path = JoinPath(directory, filename);
 		SDL_free(directory);
 
 		return(path);

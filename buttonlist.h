@@ -58,7 +58,7 @@ private:
 		Uint16 x1, y1;
 		Uint16 x2, y2;
 		void (*callback)(void);
-		button *next;
+		struct button *next;
 	} button;
 	button button_list;
 };

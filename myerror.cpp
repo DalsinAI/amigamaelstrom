@@ -11,6 +11,10 @@
 
 #include "SDL.h"
 
+#ifdef __amigaos__
+extern "C" void amiga_note_error(const char *text);	/* amiga/amiga_main.c */
+#endif
+
 
 void error(const char *fmt, ...)
 {
@@ -21,6 +25,10 @@ void error(const char *fmt, ...)
 	SDL_vsnprintf(mesg, sizeof(mesg), fmt, ap);
 	fputs(mesg, stderr);
 	va_end(ap);
+#ifdef __amigaos__
+	/* Kept for the requester shown if the game cannot go on */
+	amiga_note_error(mesg);
+#endif
 }
 
 void mesg(const char *fmt, ...)

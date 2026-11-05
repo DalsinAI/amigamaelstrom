@@ -714,6 +714,29 @@ extern "C" void CleanUp(void)
 }
 
 /* ----------------------------------------------------------------- */
+/* -- Load the fonts and the sounds (the Amiga version opens its window
+      first, so that something shows while this takes) */
+static int LoadFontsAndSounds(void)
+{
+	LibPath library;
+
+	/* Load the Font Server */
+	fontserv = new FontServ(library.Path("Maelstrom Fonts"));
+	if ( fontserv->Error() ) {
+		error("Fatal: %s\n", fontserv->Error());
+		return(-1);
+	}
+
+	/* Load the Sound Server and initialize sound */
+	sound = new Sound(library.Path("Maelstrom Sounds"), gSoundLevel);
+	if ( sound->Error() ) {
+		error("Fatal: %s\n", sound->Error());
+		return(-1);
+	}
+	return(0);
+}
+
+/* ----------------------------------------------------------------- */
 /* -- Perform some initializations and report failure if we choke */
 int DoInitializations(Uint32 video_flags)
 {
@@ -734,7 +757,10 @@ int DoInitializations(Uint32 video_flags)
 		}
 	}
 	atexit(CleanUp);
+#ifndef __amigaos__
+	/* libnix's signal() knows no SIGSEGV */
 	signal(SIGSEGV, exit);
+#endif
 
 	// -- Initialize some variables
 	gLastHigh = -1;
@@ -752,19 +778,11 @@ int DoInitializations(Uint32 video_flags)
 	}
 #endif
 
-	/* Load the Font Server */
-	fontserv = new FontServ(library.Path("Maelstrom Fonts"));
-	if ( fontserv->Error() ) {
-		error("Fatal: %s\n", fontserv->Error());
+#ifndef __amigaos__
+	if ( LoadFontsAndSounds() < 0 ) {
 		return(-1);
 	}
-
-	/* Load the Sound Server and initialize sound */
-	sound = new Sound(library.Path("Maelstrom Sounds"), gSoundLevel);
-	if ( sound->Error() ) {
-		error("Fatal: %s\n", sound->Error());
-		return(-1);
-	}
+#endif
 
 	/* Load the Maelstrom icon */
 	icon = SDL_LoadBMP(library.Path("icon.bmp"));
@@ -805,6 +823,12 @@ int DoInitializations(Uint32 video_flags)
 	screen->Fade();
 	DoSplash();
 	screen->Fade();
+#ifdef __amigaos__
+	/* The window shows the splash while the sounds are converted */
+	if ( LoadFontsAndSounds() < 0 ) {
+		return(-1);
+	}
+#endif
 	for ( i=0; i<5; ++i ) {
 		if ( DropEvents() ) {
 			break;
@@ -833,6 +857,11 @@ int DoInitializations(Uint32 video_flags)
 
 	/* -- Create the shots array */
 	InitShots();
+	if ( (gPlayerShot == NULL) || (gEnemyShot == NULL) ) {
+		error("Fatal: Couldn't create the shot images: %s\n",
+							screen->Error());
+		return(-1);
+	}
 
 	/* -- Initialize the sprite manager - after we load blits and shots! */
 	if ( InitSprites() < 0 )

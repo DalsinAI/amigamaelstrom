@@ -18,6 +18,10 @@
 
 /* External functions used in this file */
 extern int DoInitializations(Uint32 video_flags);		/* init.cc */
+#ifdef __amigaos__
+extern "C" void amiga_startup(void);			/* amiga/amiga_main.c */
+extern "C" void amiga_report_errors(int on);
+#endif
 
 static const char *Version =
 "Maelstrom v1.4.3 (GPL version 3.0.7) -- 02/01/2021 by Sam Lantinga\n";
@@ -63,10 +67,13 @@ static void RunPlayGame(void)
 }
 static void RunQuitGame(void)
 {
+#ifndef __amigaos__
+	/* The Amiga version leaves at once */
 	Delay(SOUND_DELAY);
 	sound->PlaySound(gMultiplierGone, 5);
 	while ( sound->Playing() )
 		Delay(SOUND_DELAY);
+#endif
 	gRunning = false;
 }
 static void IncrementSound(void)
@@ -152,13 +159,22 @@ void PrintUsage(void)
 	error("\nUsage: %s [-netscores] -printscores\n", progname);
 	error("or\n");
 	error("Usage: %s <options>\n\n", progname);
+#ifdef __amigaos__
 	error("Where <options> can be any of:\n\n"
-"	-windowed		# Run Maelstrom in windowed mode\n"
+"	-fullscreen		# Run Maelstrom on its own 640x480 screen\n"
+"	-gamma [0-8]		# Set the gamma correction\n"
+"	-volume [0-8]		# Set the sound volume\n"
+"	-speedtest		# Time the sprite drawing\n"
+	);
+#else
+	error("Where <options> can be any of:\n\n"
+"	-fullscreen		# Run Maelstrom in full-screen mode\n"
 "	-gamma [0-8]		# Set the gamma correction\n"
 "	-volume [0-8]		# Set the sound volume\n"
 "	-netscores		# Use the world-wide network score server\n"
 	);
 	LogicUsage();
+#endif
 	error("\n");
 	exit(1);
 }
@@ -170,11 +186,28 @@ int main(int argc, char *argv[])
 	/* Command line flags */
 	int doprinthigh = 0;
 	int speedtest = 0;
+#ifdef __amigaos__
+	/* A window on the Workbench unless -fullscreen; SDL2.module wants
+	   a real screen mode, not _FULLSCREEN_DESKTOP */
+	Uint32 video_flags = 0;
+#else
 	Uint32 video_flags = SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
 
 	/* Normal variables */
 	SDL_Event event;
+#ifdef __amigaos__
+	/* From the Workbench argc is 0 and argv is the WBStartup message */
+	amiga_startup();
+	if ( argc < 1 ) {
+		static char *noargs[] = { (char *)"Maelstrom", NULL };
+		argc = 1;
+		argv = noargs;
+	}
+	LibPath::SetExePath(CUR_DIR);
+#else
 	LibPath::SetExePath(argv[0]);
+#endif
 
 #ifndef __WIN95__
 	/* The first thing we do is calculate our checksum */
@@ -196,6 +229,11 @@ int main(int argc, char *argv[])
 		if ( strcmp(argv[1], "-windowed") == 0 ) {
 			video_flags &= ~SDL_WINDOW_FULLSCREEN_DESKTOP;
 		} else
+#ifdef __amigaos__
+		if ( strcmp(argv[1], "-fullscreen") == 0 ) {
+			video_flags = SDL_WINDOW_FULLSCREEN;
+		} else
+#endif
 		if ( strcmp(argv[1], "-gamma") == 0 ) {
 			int gammacorrect;
 
@@ -272,6 +310,11 @@ int main(int argc, char *argv[])
 	if ( InitLogic() < 0 )
 		exit(1);
 
+#ifdef __amigaos__
+	/* From here on a failure is also shown in a requester */
+	amiga_report_errors(1);
+#endif
+
 	/* Initialize everything. :) */
 	if ( DoInitializations(video_flags) < 0 ) {
 		/* An error message was already printed */
@@ -280,6 +323,9 @@ int main(int argc, char *argv[])
 
 	if ( speedtest ) {
 		RunSpeedTest();
+#ifdef __amigaos__
+		amiga_report_errors(0);
+#endif
 		exit(0);
 	}
 
@@ -340,6 +386,9 @@ int main(int argc, char *argv[])
 
 				/* -- Let them leave */
 				case SDLK_q:
+#ifdef __amigaos__
+				case SDLK_ESCAPE:
+#endif
 					RunQuitGame();
 					break;
 
@@ -402,8 +451,12 @@ int main(int argc, char *argv[])
 			RunQuitGame();
 		}
 	}
+#ifdef __amigaos__
+	amiga_report_errors(0);
+#else
 	screen->Fade();
 	Delay(60);
+#endif
 	return(0);
 }	/* -- main */
 

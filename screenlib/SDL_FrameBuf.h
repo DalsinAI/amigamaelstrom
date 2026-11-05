@@ -56,12 +56,32 @@ public:
 	void   ClipBlit(SDL_Rect *cliprect);
 
 	/* Event Routines */
+#ifdef __amigaos__
+	/* The mouse position is taken from Intuition (see FixMouse()) */
+	int PollEvent(SDL_Event *event) {
+		int got = SDL_PollEvent(event);
+		if ( got ) FixMouse(event);
+		return(got);
+	}
+	int WaitEvent(SDL_Event *event) {
+		int got = SDL_WaitEvent(event);
+		if ( got ) FixMouse(event);
+		return(got);
+	}
+	void FixMouse(SDL_Event *event);
+	/* SDL2.module 0.6 cannot switch a window to a screen and back:
+	   start with -fullscreen instead */
+	void ToggleFullScreen(void) {
+	}
+#else
 	int PollEvent(SDL_Event *event) {
 		return(SDL_PollEvent(event));
 	}
 	int WaitEvent(SDL_Event *event) {
 		return(SDL_WaitEvent(event));
 	}
+#endif
+#ifndef __amigaos__
 	void ToggleFullScreen(void) {
 		if (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN_DESKTOP) {
 			SDL_SetWindowFullscreen(window, 0);
@@ -69,6 +89,7 @@ public:
 			SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
 		}
 	}
+#endif
 
 	/* Locking blitting and update routines */
 	void Lock(void);
@@ -157,6 +178,12 @@ private:
 	Uint8 *screen_mem;
 	Uint32 colormap[256];
 	int faded;
+#ifdef __amigaos__
+	/* staging is a 32-bit copy of the picture kept for the run; only the
+	   dirty rectangles are converted and sent to the texture, unless
+	   the colours changed */
+	int full_update;
+#endif
 
 	/* Error message */
 	void SetError(const char *fmt, ...) {

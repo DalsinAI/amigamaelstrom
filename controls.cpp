@@ -18,6 +18,10 @@
 #ifdef FAITHFUL_SPECS
 Controls controls =
 { SDLK_CAPSLOCK,SDLK_SPACE,SDLK_UP,SDLK_RIGHT,SDLK_LEFT,SDLK_TAB,SDLK_ESCAPE };
+#elif defined(__amigaos__)
+/* An Amiga keyboard has no Pause key: P pauses */
+Controls controls =
+   { SDLK_p,SDLK_SPACE,SDLK_UP,SDLK_RIGHT,SDLK_LEFT,SDLK_TAB,SDLK_ESCAPE };
 #else
 Controls controls =
    { SDLK_PAUSE,SDLK_SPACE,SDLK_UP,SDLK_RIGHT,SDLK_LEFT,SDLK_TAB,SDLK_ESCAPE };
@@ -415,6 +419,12 @@ static void HandleEvent(SDL_Event *event)
 
 		/* -- Handle key presses/releases */
 		case SDL_KEYDOWN:
+#ifdef __amigaos__
+			/* A held key is one press (the keyboard's repeat
+			   would pause and unpause with a held P) */
+			if ( event->key.repeat )
+				break;
+#endif
 			/* -- Handle ALT-ENTER hotkey */
 			if ( (event->key.keysym.sym == SDLK_RETURN) &&
 			     (event->key.keysym.mod & gToggleFullscreenMod) ) {

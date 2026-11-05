@@ -22,6 +22,19 @@
 #include "SDL_FrameBuf.h"
 #include "pixel.h"
 
+#ifdef __amigaos__
+/* OpenGPU's SDL 2 reports a 24-bit window: the picture goes to the
+   renderer as explicit 32-bit XRGB */
+#define TEXTURE_FORMAT	SDL_PIXELFORMAT_RGB888
+#define FADE_STEPS	16
+/* Too many dirty rectangles: send their bounding box in one go */
+#define MAX_RECT_UPLOADS	16
+extern "C" int amiga_pointer_get(const char *title, int log_w, int log_h, int *x, int *y);
+#else
+#define TEXTURE_FORMAT	SDL_PIXELFORMAT_ARGB8888
+#define FADE_STEPS	32
+#endif
+
 
 #define LOWER_PREC(X)	((X)/16)	/* Lower the precision of a value */
 #define RAISE_PREC(X)	((X)/16)	/* Raise the precision of a value */
@@ -58,6 +71,9 @@ FrameBuf:: FrameBuf()
 	updatelist = NULL;
 	errstr = NULL;
 	faded = 0;
+#ifdef __amigaos__
+	full_update = 1;
+#endif
 	images.next = NULL;
 	itail = &images;
 }
@@ -80,7 +96,12 @@ int
 FrameBuf:: Init(int width, int height, Uint32 video_flags,
 					SDL_Color *colors, SDL_Surface *icon)
 {
+#ifdef __amigaos__
+	/* The title is how amiga_pointer_get() knows the game's window */
+	window = SDL_CreateWindow( "Maelstrom", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, video_flags);
+#else
 	window = SDL_CreateWindow( "", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, video_flags);
+#endif
 	if ( window == NULL )
 	{
 		SetError("Couldn't create window: %s", SDL_GetError());
@@ -98,7 +119,7 @@ FrameBuf:: Init(int width, int height, Uint32 video_flags,
 		return(-1);
 	}
 
-	texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, width, height);
+	texture = SDL_CreateTexture(renderer, TEXTURE_FORMAT, SDL_TEXTUREACCESS_STREAMING, width, height);
 	if ( texture == NULL ) {
 		SetError("Couldn't create texture: %s", SDL_GetError());
 		return(-1);
@@ -128,7 +149,11 @@ FrameBuf:: Init(int width, int height, Uint32 video_flags,
 	PrintSurface("Created background", screenbg);
 
 	/* Create the staging surface */
-	staging = SDL_CreateRGBSurfaceWithFormatFrom(NULL, width, height, 32, 0, SDL_PIXELFORMAT_ARGB8888);
+#ifdef __amigaos__
+	staging = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32, TEXTURE_FORMAT);
+#else
+	staging = SDL_CreateRGBSurfaceWithFormatFrom(NULL, width, height, 32, 0, TEXTURE_FORMAT);
+#endif
 	if ( staging == NULL ) {
 		SetError("Couldn't create staging surface: %s", SDL_GetError());
 		return(-1);
@@ -151,6 +176,10 @@ FrameBuf:: Init(int width, int height, Uint32 video_flags,
 	dirtypitch = LOWER_PREC(width);
 	dirtymaplen = LOWER_PREC(height)*dirtypitch;
 	dirtymap   = new SDL_Rect *[dirtymaplen];
+	if ( dirtymap == NULL ) {
+		SetError("Out of memory (dirty rectangle map)");
+		return(-1);
+	}
 
 	/* Create the update list */
 	updatelist = new SDL_Rect[UPDATE_CHUNK];
@@ -236,6 +265,9 @@ FrameBuf:: SetPalette(SDL_Color *colors)
 		Uint8 b = palette->colors[i].b;
 		colormap[i] = SDL_MapRGB(staging->format, r, g, b);
 	}
+#ifdef __amigaos__
+	full_update = 1;
+#endif
 
 	SetBackground(BGrgb[0], BGrgb[1], BGrgb[2]);
 }
@@ -302,6 +334,121 @@ FrameBuf:: Update(int auto_update)
 	}
 	ClearDirtyList();
 }
+#ifdef __amigaos__
+/* Convert one rectangle of the 8-bit picture into staging */
+static inline void ConvertRect(SDL_Surface *src8, SDL_Surface *dst32,
+				const Uint32 *colormap, const SDL_Rect *r)
+{
+	for ( int row = r->y; row < r->y + r->h; ++row ) {
+		const Uint8 *src = (const Uint8 *)src8->pixels + row * src8->pitch + r->x;
+		Uint32 *dst = (Uint32 *)((Uint8 *)dst32->pixels + row * dst32->pitch) + r->x;
+		for ( int col = r->w; col; --col ) {
+			*dst++ = colormap[ *src++ ];
+		}
+	}
+}
+
+/* A dirty rectangle clipped to the picture; 0 if nothing is left */
+static inline int ClipToScreen(const SDL_Rect *in, SDL_Rect *out, int w, int h)
+{
+	int x1 = in->x, y1 = in->y, x2 = in->x + in->w, y2 = in->y + in->h;
+
+	if ( x1 < 0 ) x1 = 0;
+	if ( y1 < 0 ) y1 = 0;
+	if ( x2 > w ) x2 = w;
+	if ( y2 > h ) y2 = h;
+	if ( (x2 <= x1) || (y2 <= y1) )
+		return(0);
+	out->x = x1;
+	out->y = y1;
+	out->w = x2 - x1;
+	out->h = y2 - y1;
+	return(1);
+}
+
+/* Upstream converts and uploads the whole 640x480 picture on every
+   update; on a 68040 that is most of a frame. Here only what changed is
+   converted and sent, and everything after a palette change or a fade. */
+void
+FrameBuf:: UpdateScreen(void)
+{
+	int w = staging->w;
+	int h = staging->h;
+	SDL_Rect r;
+
+	if ( full_update ) {
+		r.x = 0;
+		r.y = 0;
+		r.w = w;
+		r.h = h;
+		ConvertRect(screenfg, staging, colormap, &r);
+		SDL_UpdateTexture(texture, NULL, staging->pixels, staging->pitch);
+		full_update = 0;
+	} else if ( updatelen > 0 ) {
+		SDL_Rect box;
+		int boxed = 0;
+
+		for ( int i = 0; i < updatelen; ++i ) {
+			if ( ! ClipToScreen(&updatelist[i], &r, w, h) )
+				continue;
+			ConvertRect(screenfg, staging, colormap, &r);
+			if ( updatelen <= MAX_RECT_UPLOADS ) {
+				SDL_UpdateTexture(texture, &r,
+					(Uint8 *)staging->pixels + r.y * staging->pitch + r.x * 4,
+					staging->pitch);
+			} else if ( ! boxed ) {
+				box = r;
+				boxed = 1;
+			} else {
+				SDL_UnionRect(&box, &r, &box);
+			}
+		}
+		if ( boxed ) {
+			SDL_UpdateTexture(texture, &box,
+				(Uint8 *)staging->pixels + box.y * staging->pitch + box.x * 4,
+				staging->pitch);
+		}
+	}
+	SDL_RenderClear(renderer);
+	SDL_RenderCopy(renderer, texture, NULL, NULL);
+	SDL_RenderPresent(renderer);
+}
+
+/* The mouse position from Intuition (amiga/amiga_pointer.c), and a
+   redraw when the window is uncovered */
+void
+FrameBuf:: FixMouse(SDL_Event *event)
+{
+	int x, y;
+
+	switch (event->type) {
+		case SDL_MOUSEBUTTONDOWN:
+		case SDL_MOUSEBUTTONUP:
+			if ( amiga_pointer_get("Maelstrom", staging->w, staging->h, &x, &y) ) {
+				event->button.x = x;
+				event->button.y = y;
+			}
+			break;
+		case SDL_MOUSEMOTION:
+			if ( amiga_pointer_get("Maelstrom", staging->w, staging->h, &x, &y) ) {
+				event->motion.x = x;
+				event->motion.y = y;
+			}
+			break;
+		case SDL_WINDOWEVENT:
+			/* Uncovered on the Workbench while the menu waits:
+			   show the picture again (the texture has it all) */
+			if ( event->window.event == SDL_WINDOWEVENT_EXPOSED ) {
+				SDL_RenderClear(renderer);
+				SDL_RenderCopy(renderer, texture, NULL, NULL);
+				SDL_RenderPresent(renderer);
+			}
+			break;
+		default:
+			break;
+	}
+}
+#else
 void
 FrameBuf:: UpdateScreen(void)
 {
@@ -323,6 +470,7 @@ FrameBuf:: UpdateScreen(void)
 	SDL_RenderCopy(renderer, texture, NULL, NULL);
 	SDL_RenderPresent(renderer);
 }
+#endif /* __amigaos__ */
 
 /* Drawing routines */
 void
@@ -569,7 +717,7 @@ static inline void memswap(Uint8 *dst, Uint8 *src, Uint8 len)
 void
 FrameBuf:: Fade(void)
 {
-	const int max = 32;
+	const int max = FADE_STEPS;
 	Uint8 ramp[256];
 	int i, j;
 
@@ -586,6 +734,9 @@ FrameBuf:: Fade(void)
 				Uint8 b = ramp[palette->colors[i].b];
 				colormap[i] = SDL_MapRGB(staging->format, r, g, b);
 			}
+#ifdef __amigaos__
+			full_update = 1;
+#endif
 			UpdateScreen();
 
 			// Prevent the "busy" cursor on macOS
@@ -720,13 +871,13 @@ FrameBuf:: LoadImage(Uint16 w, Uint16 h, Uint8 *pixels, Uint8 *mask)
 		Uint8 colorkey, m;
 
 		/* Look for an unused palette entry */
-		memset(used, 0, 256);
+		memset(used, 0, sizeof(used));
 		pix_mem = pixels;
 		for ( i=(w*h); i!=0; --i ) {
 			++used[*pix_mem];
 			++pix_mem;
 		}
-		for ( i=0; used[i] && i<256; ++i ) {
+		for ( i=0; i<256 && used[i]; ++i ) {
 			/* Keep looking */;
 		}
 		colorkey = (Uint8)i;

@@ -1,0 +1,100 @@
+# Maelstrom 3.0.7 for AmigaOS 3.x, 68040/68060 + FPU, on OpenGPU's SDL 2.
+#
+#   make -f amiga/Makefile.amigaos -j2 dist \
+#        STOVE=/path/to/openamigagcc-16.2.0-open4 \
+#        NDK=/path/to/OpenNDK/Include_H SDL2KIT=/path/to/opengpu-sdk
+#
+# STOVE is GFOpenAmigaGCC 16.2.0-open4 or later. SDL2KIT is the OpenGPU
+# developer kit: libSDL2.a, the program's half of LIBS:OpenGPU/SDL2.module
+# (window, keys, joystick, sound). No SDL2_net: network play and the
+# world-wide score server are cut (amiga/netplay_local.cpp and
+# amiga/netscore_none.cpp stand in for netlogic/netplay.cpp and
+# netscore.cpp). configure is not run.
+#
+# The data (Maelstrom_Fonts, _Sounds, _Sprites: Macintosh resource forks,
+# big-endian; Images/*.bmp and *.cicn) is copied as upstream installs it.
+# 'make ... dist' makes the drawer dist/Maelstrom (+ dist/Maelstrom.info).
+
+STOVE   ?= $(HOME)/CradleLab/toolchain/openamigagcc-16.2.0-open4-x86_64-linux
+NDK     ?= $(HOME)/CradleLab/gfopensdk/OpenNDK/Include_H
+SDL2KIT ?= /mnt/amigachrome/team2/deps/opengpu-sdk
+CC      = $(STOVE)/bin/m68k-amigaos-gcc
+CXX     = $(STOVE)/bin/m68k-amigaos-g++
+STRIP   = $(STOVE)/bin/m68k-amigaos-strip
+CPU     ?= -m68040 -m68881
+# -fno-tree-loop-distribute-patterns: GCC 16's loop miscompile (the kit's
+# sdl2-config gives it for GCC 16 too).
+OPT     ?= -O2 -fomit-frame-pointer -fno-tree-loop-distribute-patterns
+
+DEFS    = -D__amigaos__ -DNDEBUG -DVERSION=\"3.0.7\"
+INC     = -I. -Inetlogic -Iscreenlib -Imaclib -I$(SDL2KIT)/include/SDL2
+CFLAGS  = -noixemul $(OPT) $(CPU) -fno-common $(DEFS) $(INC)
+CXXFLAGS = $(CFLAGS) -fno-exceptions -fno-rtti -Wall -Wno-write-strings
+LDFLAGS = -noixemul $(CPU)
+LIBS    = -L$(SDL2KIT)/lib -lSDL2 -lm
+
+BUILD   = build/amigaos
+OBJDIR  = $(BUILD)/obj
+PROG    = Maelstrom
+OUT     = dist/Maelstrom
+
+# Upstream's Makefile.am lists, without netscore.cpp, netlogic/netplay.cpp
+# and Maelstrom-netd.
+SRC     = checksum.cpp controls.cpp dialog.cpp fastrand.cpp init.cpp \
+          load.cpp main.cpp myerror.cpp rect.cpp scores.cpp \
+          netlogic/about.cpp netlogic/blit.cpp netlogic/game.cpp \
+          netlogic/logic.cpp netlogic/make.cpp netlogic/object.cpp \
+          netlogic/objects.cpp netlogic/player.cpp \
+          screenlib/SDL_FrameBuf.cpp screenlib/pixel.cpp \
+          maclib/Mac_FontServ.cpp maclib/Mac_Resource.cpp \
+          maclib/Mac_Sound.cpp maclib/Mac_Wave.cpp \
+          amiga/netplay_local.cpp amiga/netscore_none.cpp
+CSRC    = amiga/amiga_main.c amiga/amiga_screens.c amiga/amiga_pointer.c \
+          amiga/amiga_message.c amiga/stack.c amiga/pthread_stubs.c
+OBJS    = $(SRC:%.cpp=$(OBJDIR)/%.o) $(CSRC:%.c=$(OBJDIR)/%.o)
+
+HDRS    = $(wildcard *.h netlogic/*.h screenlib/*.h maclib/*.h)
+DATA    = Maelstrom_Fonts Maelstrom_Sounds Maelstrom_Sprites icon.bmp
+IMAGES  = $(wildcard Images/*.bmp) $(wildcard Images/*.cicn)
+ICONS   = $(wildcard amiga/icons/*.info)
+
+all: $(BUILD)/$(PROG)
+
+$(BUILD)/$(PROG): $(OBJS)
+	$(CXX) $(LDFLAGS) -o $@.debug $(OBJS) $(LIBS)
+	$(STRIP) -o $@ $@.debug
+
+$(OBJDIR)/%.o: %.cpp $(HDRS)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(OBJDIR)/amiga/%.o: amiga/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I$(NDK) -Wall -Wextra -c -o $@ $<
+
+dist: $(BUILD)/$(PROG) $(ICONS) AMIGA_PORT.md README.md
+	rm -rf $(OUT) && mkdir -p $(OUT)/Images $(OUT)/Docs
+	cp $(BUILD)/$(PROG) $(OUT)/
+	cp $(DATA) $(OUT)/
+	cp $(IMAGES) $(OUT)/Images/
+	cp AMIGA_PORT.md $(OUT)/ReadMe
+	cp README.txt $(OUT)/README-Maelstrom.txt
+	cp COPYING.txt $(OUT)/COPYING.txt
+	cp COPYING.GPL $(OUT)/COPYING.GPL
+	cp CREDITS.txt $(OUT)/CREDITS.txt
+	cp Docs/Ambrosia_Software,_Inc._FAQ.txt Docs/MaelstromGPL_press_release.txt $(OUT)/Docs/
+	cp amiga/icons/Maelstrom.info amiga/icons/ReadMe.info $(OUT)/
+	for f in README-Maelstrom.txt COPYING.txt COPYING.GPL CREDITS.txt; do \
+	  cp amiga/icons/ReadMe.info $(OUT)/$$f.info; done
+	for f in Ambrosia_Software,_Inc._FAQ.txt MaelstromGPL_press_release.txt; do \
+	  cp amiga/icons/ReadMe.info $(OUT)/Docs/$$f.info; done
+	cp amiga/icons/Folder.info $(OUT)/Images.info
+	cp amiga/icons/Folder.info $(OUT)/Docs.info
+	cp amiga/icons/Maelstrom-drawer.info dist/Maelstrom.info
+
+objs: $(OBJS)
+
+clean:
+	rm -rf $(BUILD) $(OUT) dist/Maelstrom.info
+
+.PHONY: all dist objs clean
