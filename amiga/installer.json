@@ -1,0 +1,14 @@
+{
+  "name": "Maelstrom",
+  "version": "3.0.7-amigaos3",
+  "drawer": "Maelstrom",
+  "program": "Maelstrom",
+  "cpu": "68040",
+  "fpu": true,
+  "space": 3500000,
+  "modules": ["SDL2.module"],
+  "keep": ["User"],
+  "parent": "Work:Games",
+  "badge": "icons/art/maelstrom.png",
+  "script": "Install-Maelstrom"
+}

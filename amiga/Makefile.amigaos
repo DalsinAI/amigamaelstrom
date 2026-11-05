@@ -61,7 +61,7 @@ $(OUT)/$(PROG): $(OBJS)
 
 package: $(OUT)/$(PROG) AMIGA_PORT.md README.txt COPYING.txt COPYING.GPL amiga/Licences.txt
 	mkdir -p $(OUT)/User $(OUT)/Images
-	cp Maelstrom_Fonts Maelstrom_Sounds Maelstrom_Sprites $(OUT)/
+	cp Maelstrom_Fonts Maelstrom_Sounds Maelstrom_Sprites icon.bmp $(OUT)/
 	cp Images/*.bmp Images/*.cicn $(OUT)/Images/
 	cp AMIGA_PORT.md $(OUT)/ReadMe
 	cp README.txt $(OUT)/ReadMe-Maelstrom
