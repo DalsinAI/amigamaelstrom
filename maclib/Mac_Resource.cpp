@@ -184,12 +184,27 @@ static FILE *Open_MacRes(char **original, Uint32 *resbase)
 	int iterations=0;
 
 	/* Separate the Mac name from a UNIX path */
+#ifdef __amigaos__
+#define MAC_DIRSEP(d) ((*(d) && (d)[strlen(d)-1] != ':') ? "/" : "")
+#else
+#define MAC_DIRSEP(d) (*(d) ? "/" : "")
+#endif
 	size_t len = strlen(*original)+1;
 	filename = new char[len];
 	SDL_strlcpy(filename, *original, len);
 	if ( (basename=strrchr(filename, '/')) != NULL ) {
 		dirname = filename;
 		*(basename++) = '\0';
+#ifdef __amigaos__
+	} else if ( (basename=strrchr(filename, ':')) != NULL ) {
+		/* "PROGDIR:name": keep the volume as the directory; the
+		   names below are joined to it without a '/' */
+		static char amiga_dir[256];
+		++basename;
+		SDL_strlcpy(amiga_dir, filename,
+			SDL_min(sizeof(amiga_dir), (size_t)(basename-filename)+1));
+		dirname = amiga_dir;
+#endif
 	} else {
 		dirname = "";
 		basename = filename;
@@ -206,7 +221,7 @@ static FILE *Open_MacRes(char **original, Uint32 *resbase)
 		/* First look for Executor (tm) resource forks */
 		size_t len = strlen(dirname)+2+1+strlen(basename)+1;
 		newname = new char[len];
-		SDL_snprintf(newname, len, "%s%s%%%s", dirname, (*dirname ? "/" : ""),
+		SDL_snprintf(newname, len, "%s%s%%%s", dirname, MAC_DIRSEP(dirname),
 								basename);
 		if ( (resfile=fopen(newname, "rb")) != NULL ) {
 			break;
@@ -216,7 +231,7 @@ static FILE *Open_MacRes(char **original, Uint32 *resbase)
 		/* Look for MacBinary files */
 		len = strlen(dirname)+2+strlen(basename)+4+1;
 		newname = new char[len];
-		SDL_snprintf(newname, len, "%s%s%s.bin", dirname, (*dirname ? "/" : ""),
+		SDL_snprintf(newname, len, "%s%s%s.bin", dirname, MAC_DIRSEP(dirname),
 								basename);
 		if ( (resfile=fopen(newname, "rb")) != NULL ) {
 			break;
@@ -226,7 +241,7 @@ static FILE *Open_MacRes(char **original, Uint32 *resbase)
 		/* Look for raw resource fork.. */
 		len = strlen(dirname)+2+strlen(basename)+1;
 		newname = new char[len];
-		SDL_snprintf(newname, len, "%s%s%s", dirname, (*dirname ? "/" : ""),
+		SDL_snprintf(newname, len, "%s%s%s", dirname, MAC_DIRSEP(dirname),
 								basename);
 		if ( (resfile=fopen(newname, "rb")) != NULL ) {
 			break;
