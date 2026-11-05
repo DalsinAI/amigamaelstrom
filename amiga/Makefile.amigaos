@@ -1,0 +1,93 @@
+# Maelstrom 3.0.7 for AmigaOS 3.x, 68040/68060 + FPU, on GFOpenGPU's SDL 2
+# (with SDL2_net for network play).
+#
+#   make -f amiga/Makefile.amigaos -j4 [STOVE=/path/to/os32-gcc16-open6]
+#
+# STOVE is a GFOpenAmigaGCC 16.2.0-open6 stove: its prefix/ has the
+# compiler, the NDK and GFOpenGPU's SDL 2 kit (prefix/m68k-amigaos). The
+# data (Maelstrom_Fonts, Maelstrom_Sounds, Maelstrom_Sprites, Images/) is
+# upstream's, read from PROGDIR:; the settings and high scores go to
+# PROGDIR:User/.
+#
+# Output: build/amigaos/Maelstrom/ (the drawer: Maelstrom, the data,
+# ReadMe, the licences and Ambrosia's notes, User/, with GlowIcons),
+# build/amigaos/Maelstrom.info and Install-Maelstrom beside them.
+
+STOVE   ?= $(HOME)/AmiCradle/stoves/os32-gcc16-open6
+PREFIX  ?= $(STOVE)/prefix
+SDL2KIT ?= $(PREFIX)/m68k-amigaos
+CC      = $(PREFIX)/bin/m68k-amigaos-gcc
+CXX     = $(PREFIX)/bin/m68k-amigaos-g++
+CPU     ?= -m68040 -m68881
+# -fno-tree-loop-distribute-patterns: GCC 16's loop miscompile (the kit's
+# sdl2-config gives it for GCC 16 too).
+OPT     ?= -O2 -fomit-frame-pointer -fno-tree-loop-distribute-patterns
+
+VERSION = 3.0.7
+# As upstream's configure: no RSA checksum; the data in PROGDIR:.
+DEFS    = -D__amigaos__ -DVERSION='"$(VERSION)"' -DLIBDIR='"PROGDIR:"'
+INC     = -I. -Inetlogic -Iscreenlib -Imaclib -Iamiga -I$(SDL2KIT)/include/SDL2
+COMMON  = -noixemul $(OPT) $(CPU) $(DEFS) $(INC)
+CXXFLAGS = $(COMMON) -std=gnu++14 -Wno-write-strings
+CFLAGS   = $(COMMON) -std=gnu99
+LDFLAGS = -noixemul $(CPU)
+# libstdc++'s exception support calls pthread (the stove's libpthread).
+LIBS    = -L$(SDL2KIT)/lib -lSDL2_net -lSDL2 -lsocket -lm -lpthread
+
+BUILD   = build/amigaos
+OBJDIR  = $(BUILD)/obj
+OUT     = $(BUILD)/Maelstrom
+PROG    = Maelstrom
+
+# Upstream's Makefile.am lists (Maelstrom, liblogic.a, libSDLscreen.a,
+# libSDLmac.a).
+SRC     = checksum.cpp controls.cpp dialog.cpp fastrand.cpp init.cpp load.cpp \
+          main.cpp myerror.cpp netscore.cpp rect.cpp scores.cpp \
+          netlogic/about.cpp netlogic/blit.cpp netlogic/game.cpp \
+          netlogic/logic.cpp netlogic/make.cpp netlogic/netplay.cpp \
+          netlogic/object.cpp netlogic/objects.cpp netlogic/player.cpp \
+          screenlib/SDL_FrameBuf.cpp screenlib/pixel.cpp \
+          maclib/Mac_FontServ.cpp maclib/Mac_Resource.cpp \
+          maclib/Mac_Sound.cpp maclib/Mac_Wave.cpp
+ASRC    = $(wildcard amiga/*.c)
+OBJS    = $(SRC:%.cpp=$(OBJDIR)/%.o) $(ASRC:%.c=$(OBJDIR)/%.o)
+HDRS    = $(wildcard *.h netlogic/*.h screenlib/*.h maclib/*.h)
+
+all: $(OUT)/$(PROG) package
+
+$(OUT)/$(PROG): $(OBJS)
+	@mkdir -p $(OUT)
+	$(CXX) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
+
+package: $(OUT)/$(PROG) AMIGA_PORT.md README.txt COPYING.txt COPYING.GPL amiga/Licences.txt
+	mkdir -p $(OUT)/User $(OUT)/Images
+	cp Maelstrom_Fonts Maelstrom_Sounds Maelstrom_Sprites $(OUT)/
+	cp Images/*.bmp Images/*.cicn $(OUT)/Images/
+	cp AMIGA_PORT.md $(OUT)/ReadMe
+	cp README.txt $(OUT)/ReadMe-Maelstrom
+	cp COPYING.txt $(OUT)/COPYING.txt
+	cp COPYING.GPL $(OUT)/COPYING.GPL
+	cp amiga/Licences.txt $(OUT)/Licences.txt
+	cp "Docs/Ambrosia_Software,_Inc._FAQ.txt" Docs/MaelstromGPL_press_release.txt $(OUT)/
+	cp amiga/icons/Maelstrom.info amiga/icons/ReadMe.info $(OUT)/
+	for f in ReadMe-Maelstrom COPYING.txt COPYING.GPL Licences.txt \
+	    "Ambrosia_Software,_Inc._FAQ.txt" MaelstromGPL_press_release.txt; do \
+	    cp amiga/icons/ReadMe.info "$(OUT)/$$f.info"; done
+	cp amiga/icons/Data.info $(OUT)/User.info
+	cp amiga/icons/Maelstrom-drawer.info $(BUILD)/Maelstrom.info
+	cp amiga/Install-Maelstrom amiga/Install-Maelstrom.info $(BUILD)/
+
+$(OBJDIR)/amiga/%.o: amiga/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Wall -c -o $@ $<
+
+$(OBJDIR)/%.o: %.cpp $(HDRS)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+objs: $(OBJS)
+
+clean:
+	rm -rf $(BUILD)
+
+.PHONY: all package objs clean
